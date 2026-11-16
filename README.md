@@ -25,7 +25,7 @@
 - 암호화 키는 추출 불가능한 CryptoKey로 열린 탭 메모리에만 보관한다. 보관함을 잠그거나 계정을 바꾸면 UI와 참조를 해제한다. JavaScript 환경에서 메모리의 즉각적인 물리 삭제를 보장하지 않는다. 15분 미사용 시 잠근다.
 - 저장 시 IndexedDB 단일 트랜잭션에서 이전 암호문과 비교한다. 다른 탭의 수정이 있으면 덮어쓰기를 거절한다. 잘못된 비밀번호·손상된 백업은 기존 보관함을 대체하지 않는다.
 - DID·암호화 파라미터는 비밀이 아닌 로컬 헤더에 있다. 기록 본문과 파일은 평문으로 저장하지 않는다.
-- 새 진입점은 Supabase Auth/Database/Storage/Edge Functions나 외부 AI를 호출하지 않는다. 배포본 CSP의 connect-src는 self로 제한한다. 블록체인 호출은 MetaMask 공급자를 통한다.
+- 활동 CRUD는 로컬 암호화 저장을 유지한다. AI 상태 확인과 사용자가 동의·서명한 추천 요청만 전용 Supabase Edge Function으로 보낸다. CSP는 self 및 전용 추천 엔드포인트만 허용한다. 블록체인 호출은 MetaMask 공급자를 통한다.
 
 ## 블록체인 및 공유 검증
 
@@ -39,7 +39,7 @@
 - 기존 Supabase 계정·활동·파일은 삭제하거나 변경하지 않았다. 이번 변경은 새 사이트의 저장 경로를 바꾼 것이다. 기존 서버 자료를 완전히 지우려면 복구·백업 후 별도 삭제 절차가 필요하다.
 - 기존 계정 자료를 자동으로 옮기는 기능은 제공하지 않는다. 기존 JSON 백업은 내 프로필에서 활동 본문을 가져올 수 있다. 서버 주소만 있는 첨부파일은 원본을 다시 첨부해야 한다.
 - 기존 서버 공개 링크는 새 앱에서 조회하지 않는다. 예전에 공개한 파일·데이터의 서버 공개 권한까지 이 변경이 자동으로 철회하지는 않는다.
-- 이메일 회원가입·비밀번호 재설정·클라우드 동기화·서버 AI 분석은 새 화면에서 제공하지 않는다. 운영자는 보관함 비밀번호나 삭제된 기기 자료를 복구할 수 없다.
+- 이메일 회원가입·비밀번호 재설정·클라우드 동기화은 새 화면에서 제공하지 않는다. AI 추천은 별도 동의 후 제공한다. 운영자는 보관함 비밀번호나 삭제된 기기 자료를 복구할 수 없다.
 - DID 식별자는 공개 주소와 연결될 수 있다. 웹 호스팅·지갑·RPC 사업자의 접속 로그가 없어지는 것은 아니다. 기기 악성코드나 잠금 해제 중의 스크립트 침해까지 방어하는 장치는 아니다.
 
 ## 개발 및 배포
@@ -49,3 +49,19 @@ Node.js 22.13 이상에서 `npm ci`, `npm test`, `npm run build`로 검사하고
 현재 운영 저장소는 GitHub Pages `main / root`의 빌드 파일 배포 방식이다. `dist/`의 파일들을 그대로 루트로 복사하고 CNAME은 유지한다. 수정 가능한 소스는 `pathfolio-source.zip`에 제공하며 node_modules, dist, .git, .env 파일을 포함하지 않는다. 소스 ZIP에서 `.github/workflows/pages.yml`은 소스를 별도 저장소 루트에 펼쳐 GitHub Actions로 배포할 때 사용하는 설정이다.
 
 검사: 암호화·파일 복원, 잘못된 비밀번호·DID·변조 거절, 동시 탭 저장 충돌, 서명과 내용·첨부파일 결합, 로그인 메시지 검증, 10MB 파일 왕복, 화면의 활동 작성·수정·잠금·재진입 및 서버 요청 없음. 테스트용 가상 지갑과 별도 브라우저 환경을 쓰며 실제 사용자의 거래를 대신 서명하지 않는다.
+
+## 선택 동의형 AI 활동 추천 (2026-11-16)
+
+- 활동 최대 10개 선택 → 제목·종류·본문 미리보기/수정 → 동의 → 지갑 메시지 서명 → 추천. 이름·기관·날짜·원본 ID·첨부파일은 제외하며 전송 본문은 활동당 1,500자까지다. 직접 적힌 개인정보는 사용자가 제거한다.
+- Supabase `did-recommendations`는 지갑 서명을 검증한 후 Cloudflare Workers AI의 `@cf/meta/llama-3.3-70b-instruct-fp8-fast`로 텍스트만 전송한다. Cloudflare Workers Free 요금제를 유지한다. API 키는 클라이언트에 포함하지 않는다.
+- 새 private.did_ai_usage에는 HMAC 지갑 식별값·횟수·시각만 기록한다. 활동 본문·AI 결과는 DB/애플리케이션 로그에 기록하지 않는다. 지갑별 1분 간격·UTC 일일 5회, 서비스 전체 일일 20회. 서명은 5분 유효하고 재사용을 거절한다. 7일이 지난 메타데이터는 다음 요청 때 정리한다. 공급자의 운영 로그/백업은 별도 정책이다.
+- 결과는 사용자 요청 시 기존 AES-GCM 보관함과 백업에 포함해 가장 최근 1개를 보관한다. 기존 백업도 계속 열린다.
+- 연결 전에는 준비 중 상태만 표시한다. 예시를 실제 AI 결과로 표시하지 않는다.
+
+### 서버 설정
+
+1. `supabase/did-ai-guard.sql`을 승인 후 적용한다. 기존 활동 테이블은 수정하지 않는다. RPC는 service_role만 호출 가능하다.
+2. `supabase/functions/did-recommendations`를 배포한다. verify_jwt=false이지만 본문에서 지갑 서명·요청 내용 해시·기한·동의 및 서버 rate limiter로 인증한다.
+3. Supabase Edge Function Secrets에 `CLOUDFLARE_AI_TOKEN`(Workers AI에만 권한), `CLOUDFLARE_ACCOUNT_ID`, `AI_RATE_SALT`(32바이트 이상 임의 비밀값), `DID_AI_ENABLED=true`를 등록한다. 비밀값을 GitHub나 채팅으로 보내지 않는다.
+4. 상태 GET의 ready=true와 비식별 테스트 기록에 대한 실제 추천을 확인한다. 키가 없으면 ready=false/POST 503으로 실패한다. Cloudflare 유료 요금제로 자동 전환하지 않는다.
+5. 참고: https://developers.cloudflare.com/workers-ai/platform/pricing/ 및 https://developers.cloudflare.com/workers-ai/platform/data-usage/
